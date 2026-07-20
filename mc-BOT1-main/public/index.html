@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MC AFK Bot Manager — 100 Slots</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-darkest: #202225;
+  --bg-dark:    #2f3136;
+  --bg-mid:     #36393f;
+  --bg-light:   #40444b;
+  --text:       #dcddde;
+  --text-muted: #8e9297;
+  --text-header:#96989d;
+  --green:      #3ba55c;
+  --green-br:   #43b581;
+  --red:        #ed4245;
+  --yellow:     #faa81a;
+  --blue:       #5865f2;
+  --primary:    #5865f2;
+  --border:     #1e2124;
+  --font-mono:  'Courier New', monospace;
+}
+html, body { height: 100%; font-family: Whitney, 'Helvetica Neue', Helvetica, Arial, sans-serif; background: var(--bg-darkest); color: var(--text); overflow: hidden; }
+
+/* Layout */
+.layout { display: flex; height: 100vh; }
+
+/* Left sidebar */
+.sidebar { width: 240px; background: var(--bg-dark); display: flex; flex-direction: column; flex-shrink: 0; border-right: 1px solid var(--border); }
+.sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+.sidebar-header h2 { font-size: 15px; font-weight: 700; color: #fff; }
+.sidebar-header p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.stats-row { display: flex; gap: 8px; margin-top: 10px; }
+.stat-box { flex: 1; background: var(--bg-mid); border-radius: 6px; padding: 8px; text-align: center; }
+.stat-box .val { font-size: 18px; font-weight: 700; color: var(--green-br); }
+.stat-box .lbl { font-size: 10px; color: var(--text-muted); }
+
+.sidebar-search { padding: 8px 12px; }
+.sidebar-search input { width: 100%; background: var(--bg-darkest); border: none; border-radius: 4px; padding: 6px 10px; color: var(--text); font-size: 13px; outline: none; }
+.sidebar-search input::placeholder { color: var(--text-muted); }
+
+.slot-list-header { padding: 8px 16px 4px; font-size: 11px; font-weight: 700; color: var(--text-header); text-transform: uppercase; letter-spacing: .5px; }
+.slot-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+.slot-list::-webkit-scrollbar { width: 4px; }
+.slot-list::-webkit-scrollbar-thumb { background: var(--bg-light); border-radius: 2px; }
+
+.slot-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: background .1s; user-select: none; }
+.slot-item:hover { background: var(--bg-mid); }
+.slot-item.active { background: var(--bg-light); }
+.slot-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.slot-dot.online { background: var(--green-br); box-shadow: 0 0 6px var(--green-br); }
+.slot-dot.reconnecting { background: var(--yellow); animation: pulse 1s infinite; }
+.slot-dot.registered { background: #5865f2; }
+.slot-name { font-size: 13px; color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-item.active .slot-name { color: var(--text); }
+.slot-num { font-size: 10px; color: var(--text-muted); opacity: .6; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Main area */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-mid); }
+
+/* Header bar */
+.topbar { height: 48px; background: var(--bg-mid); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0; }
+.topbar-slot { font-size: 15px; font-weight: 700; color: #fff; }
+.topbar-status { font-size: 12px; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+.topbar-status.online { background: rgba(59,165,92,.2); color: var(--green-br); }
+.topbar-status.offline { background: rgba(237,66,69,.15); color: #f04747; }
+.topbar-status.reconnecting { background: rgba(250,168,26,.15); color: var(--yellow); }
+.topbar-host { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 16px; display: flex; gap: 16px; }
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-thumb { background: var(--bg-light); border-radius: 2px; }
+
+/* Card */
+.card { background: var(--bg-dark); border-radius: 8px; padding: 16px; }
+.card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-header); margin-bottom: 12px; }
+
+/* Left column */
+.col-left { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+
+/* Bot panel card (Discord embed style) */
+.bot-embed { background: var(--bg-dark); border-radius: 8px; border-left: 4px solid var(--primary); padding: 16px; }
+.bot-embed-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.bot-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.bot-embed-title { font-size: 15px; font-weight: 700; color: #fff; }
+.bot-embed-sub { font-size: 12px; color: var(--text-muted); }
+.embed-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.embed-field { background: var(--bg-mid); border-radius: 4px; padding: 8px; }
+.embed-field .f-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-header); margin-bottom: 2px; }
+.embed-field .f-value { font-size: 13px; color: var(--text); font-weight: 600; }
+
+/* Buttons */
+.btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.btn { border: none; border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .1s, opacity .1s; outline: none; }
+.btn:hover { filter: brightness(1.1); }
+.btn:active { filter: brightness(.9); }
+.btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.btn-green  { background: var(--green); color: #fff; }
+.btn-red    { background: var(--red); color: #fff; }
+.btn-grey   { background: #4f545c; color: #fff; }
+.btn-blue   { background: var(--blue); color: #fff; }
+.btn-danger { background: #c0392b; color: #fff; }
+
+/* Settings form */
+.form-group { margin-bottom: 10px; }
+.form-group label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-header); margin-bottom: 4px; }
+.form-group input { width: 100%; background: var(--bg-darkest); border: 1px solid var(--bg-light); border-radius: 4px; padding: 8px 10px; color: var(--text); font-size: 13px; outline: none; }
+.form-group input:focus { border-color: var(--primary); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.form-actions { margin-top: 4px; }
+
+/* Players list */
+.players-list { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; }
+.player-entry { font-size: 12px; color: var(--green-br); display: flex; align-items: center; gap: 6px; }
+.player-entry::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green-br); flex-shrink: 0; }
+
+/* Right column - console */
+.col-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.console-card { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.console-output { flex: 1; overflow-y: auto; background: #1a1a1a; border-radius: 6px; padding: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; min-height: 300px; max-height: 520px; }
+.console-output::-webkit-scrollbar { width: 4px; }
+.console-output::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+.log-line { display: flex; gap: 8px; }
+.log-time { color: #555; flex-shrink: 0; }
+.log-sender { flex-shrink: 0; font-weight: bold; }
+.log-sender.system { color: #faa81a; }
+.log-sender.server { color: #5865f2; }
+.log-sender.error  { color: #ed4245; }
+.log-sender.player { color: #3ba55c; }
+.log-msg { color: #ccc; word-break: break-all; }
+.console-empty { color: #555; text-align: center; padding: 40px 0; }
+
+.chat-input-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.chat-prefix { color: var(--text-muted); font-size: 13px; }
+.chat-input { flex: 1; background: var(--bg-darkest); border: 1px solid var(--bg-light); border-radius: 6px; padding: 10px 14px; color: var(--text); font-size: 13px; outline: none; }
+.chat-input:focus { border-color: var(--primary); }
+.chat-input:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Welcome / no slot */
+.no-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 12px; opacity: .5; }
+.no-slot .icon { font-size: 64px; }
+.no-slot p { font-size: 16px; color: var(--text-muted); }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg-dark); border-radius: 10px; padding: 24px; width: 380px; box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+.modal h3 { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.modal .modal-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* Danger confirm */
+.danger-text { background: rgba(237,66,69,.15); border: 1px solid rgba(237,66,69,.4); border-radius: 6px; padding: 10px; font-size: 13px; color: #f04747; margin-bottom: 4px; }
+
+/* Alert toast */
+.toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg-dark); border-left: 4px solid var(--green); border-radius: 6px; padding: 12px 16px; font-size: 13px; color: var(--text); z-index: 999; box-shadow: 0 4px 20px rgba(0,0,0,.5); transform: translateY(0); transition: all .3s; opacity: 1; }
+.toast.error { border-color: var(--red); }
+.toast.hide { opacity: 0; transform: translateY(10px); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { width: 200px; }
+  .col-left { width: 240px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2>⛏ MC AFK Manager</h2>
+      <p>100-Slot Bot Control Panel</p>
+      <div class="stats-row">
+        <div class="stat-box"><div class="val" id="stat-active">0</div><div class="lbl">Online</div></div>
+        <div class="stat-box"><div class="val" id="stat-registered" style="color:#5865f2">0</div><div class="lbl">Registered</div></div>
+        <div class="stat-box"><div class="val" id="stat-free" style="color:#8e9297">0</div><div class="lbl">Free</div></div>
+      </div>
+    </div>
+    <div class="sidebar-search"><input id="slot-search" placeholder="Search slots..." oninput="filterSlots(this.value)"></div>
+    <div class="slot-list-header">Bot Slots</div>
+    <div class="slot-list" id="slot-list"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-slot" id="topbar-title">Select a slot →</span>
+      <span class="topbar-status" id="topbar-status" style="display:none"></span>
+      <span class="topbar-host" id="topbar-host"></span>
+    </div>
+
+    <div class="content" id="main-content">
+      <div class="no-slot">
+        <div class="icon">⛏</div>
+        <p>Select a bot slot from the sidebar</p>
+        <p style="font-size:12px">100 independent bot slots available</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal">
+    <h3>🗑 Delete Slot</h3>
+    <p class="modal-sub" id="delete-modal-sub"></p>
+    <div class="danger-text">This will permanently delete all settings and stop the bot. This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn btn-grey" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hide"></div>
+
+<script>
+const socket = io();
+const MAX_SLOTS = 100;
+
+// State
+let slotStatuses = {}; // slotId -> { online, reconnecting, registered, username, host, playerCount, players }
+let slotLogs = {}; // slotId -> [{ sender, message, timestamp }]
+let activeSlot = null;
+let deleteTarget = null;
+
+// Init slots
+for (let i = 1; i <= MAX_SLOTS; i++) {
+  slotStatuses[String(i)] = { online: false, reconnecting: false, registered: false, username: null, host: null, playerCount: 0, players: [] };
+  slotLogs[String(i)] = [];
+}
+
+// ─── Socket events ────────────────────────────────────────────────────────────
+socket.on("botStatus", (data) => {
+  const id = String(data.slotId);
+  slotStatuses[id] = { ...slotStatuses[id], ...data };
+  updateSidebarSlot(id);
+  updateStats();
+  if (activeSlot === id) updateTopbar(id);
+  if (activeSlot === id) updatePlayersPanel(id);
+});
+
+socket.on("botLog", (data) => {
+  const id = String(data.slotId);
+  slotLogs[id] = [...(slotLogs[id] || []).slice(-499), data];
+  if (activeSlot === id) appendLog(data);
+});
+
+socket.on("slotDeleted", (data) => {
+  const id = String(data.slotId);
+  slotStatuses[id] = { online: false, reconnecting: false, registered: false, username: null, host: null, playerCount: 0, players: [] };
+  slotLogs[id] = [];
+  updateSidebarSlot(id);
+  updateStats();
+  if (activeSlot === id) renderContent(id);
+});
+
+// ─── Build sidebar ────────────────────────────────────────────────────────────
+function buildSidebar() {
+  const list = document.getElementById("slot-list");
+  list.innerHTML = "";
+  for (let i = 1; i <= MAX_SLOTS; i++) {
+    const id = String(i);
+    const el = document.createElement("div");
+    el.className = "slot-item";
+    el.id = `slot-item-${id}`;
+    el.onclick = () => selectSlot(id);
+    el.innerHTML = `<div class="slot-dot" id="slot-dot-${id}"></div><div class="slot-name" id="slot-name-${id}">Slot ${i}</div><div class="slot-num">#${i}</div>`;
+    list.appendChild(el);
+  }
+}
+
+function updateSidebarSlot(id) {
+  const s = slotStatuses[id];
+  const dot = document.getElementById(`slot-dot-${id}`);
+  const name = document.getElementById(`slot-name-${id}`);
+  const item = document.getElementById(`slot-item-${id}`);
+  if (!dot) return;
+  dot.className = "slot-dot" + (s.online ? " online" : s.reconnecting ? " reconnecting" : s.registered ? " registered" : "");
+  name.textContent = s.username ? `${s.username}` : `Slot ${id}`;
+  if (activeSlot === id) item.classList.add("active"); else item.classList.remove("active");
+}
+
+function filterSlots(q) {
+  const lower = q.toLowerCase();
+  for (let i = 1; i <= MAX_SLOTS; i++) {
+    const id = String(i);
+    const item = document.getElementById(`slot-item-${id}`);
+    if (!item) continue;
+    const s = slotStatuses[id];
+    const text = `slot ${id} ${s.username || ""} ${s.host || ""}`.toLowerCase();
+    item.style.display = text.includes(lower) ? "" : "none";
+  }
+}
+
+function updateStats() {
+  let online = 0, registered = 0;
+  for (let i = 1; i <= MAX_SLOTS; i++) {
+    const s = slotStatuses[String(i)];
+    if (s.online) online++;
+    if (s.registered) registered++;
+  }
+  document.getElementById("stat-active").textContent = online;
+  document.getElementById("stat-registered").textContent = registered;
+  document.getElementById("stat-free").textContent = MAX_SLOTS - registered;
+}
+
+// ─── Select slot ──────────────────────────────────────────────────────────────
+function selectSlot(id) {
+  if (activeSlot) {
+    const prev = document.getElementById(`slot-item-${activeSlot}`);
+    if (prev) prev.classList.remove("active");
+  }
+  activeSlot = String(id);
+  const item = document.getElementById(`slot-item-${id}`);
+  if (item) item.classList.add("active");
+  updateTopbar(id);
+  renderContent(id);
+}
+
+function updateTopbar(id) {
+  const s = slotStatuses[id];
+  document.getElementById("topbar-title").textContent = s.username ? `⛏ Slot ${id} — ${s.username}` : `⛏ Slot ${id}`;
+  const statusEl = document.getElementById("topbar-status");
+  statusEl.style.display = "";
+  if (s.online) { statusEl.textContent = "● ONLINE"; statusEl.className = "topbar-status online"; }
+  else if (s.reconnecting) { statusEl.textContent = "● RECONNECTING"; statusEl.className = "topbar-status reconnecting"; }
+  else { statusEl.textContent = "● OFFLINE"; statusEl.className = "topbar-status offline"; }
+  document.getElementById("topbar-host").textContent = s.host ? `${s.host}` : "";
+}
+
+// ─── Render main content ──────────────────────────────────────────────────────
+function renderContent(id) {
+  const s = slotStatuses[id];
+  const logs = slotLogs[id] || [];
+  document.getElementById("main-content").innerHTML = `
+    <div class="col-left">
+      <!-- Discord embed style panel -->
+      <div class="bot-embed">
+        <div class="bot-embed-header">
+          <div class="bot-avatar">⛏</div>
+          <div>
+            <div class="bot-embed-title">Slot ${id} Control Panel</div>
+            <div class="bot-embed-sub">${s.registered ? (s.username || "Registered") : "Not Registered"}</div>
+          </div>
+        </div>
+        <div class="embed-fields">
+          <div class="embed-field"><div class="f-label">Status</div><div class="f-value" id="embed-status-${id}">${s.online ? '🟢 Online' : s.reconnecting ? '🟡 Reconnecting' : '🔴 Offline'}</div></div>
+          <div class="embed-field"><div class="f-label">Players</div><div class="f-value" id="embed-players-${id}">${s.online ? (s.playerCount ?? 0) : '—'}</div></div>
+          <div class="embed-field"><div class="f-label">Server</div><div class="f-value" style="font-size:11px">${s.host || '—'}</div></div>
+          <div class="embed-field"><div class="f-label">Username</div><div class="f-value" style="font-size:11px">${s.username || '—'}</div></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-blue" onclick="openRegisterForm('${id}')">📝 Register</button>
+          <button class="btn btn-green" onclick="startBot('${id}')" ${!s.registered ? 'disabled' : ''}>▶ Start Bot</button>
+          <button class="btn btn-red" onclick="stopBot('${id}')" ${!s.online ? 'disabled' : ''}>⏹ Stop Bot</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-grey" onclick="restartBot('${id}')" ${!s.registered ? 'disabled' : ''}>🔄 Restart Bot</button>
+          <button class="btn btn-grey" onclick="refreshStatus('${id}')">📊 Status</button>
+          <button class="btn btn-danger" onclick="openDeleteModal('${id}')">🗑 Delete</button>
+        </div>
+      </div>
+
+      <!-- Players online -->
+      <div class="card" id="players-card-${id}">
+        <div class="card-title">Players Online (${s.playerCount ?? 0})</div>
+        <div class="players-list" id="players-list-${id}">
+          ${s.online && s.players?.length ? s.players.map(p => `<div class="player-entry">${p}</div>`).join("") : '<div style="color:var(--text-muted);font-size:12px">No players / Bot offline</div>'}
+        </div>
+      </div>
+
+      <!-- Register form (hidden by default) -->
+      <div class="card" id="register-form-${id}" style="display:none">
+        <div class="card-title">📝 Register Slot ${id}</div>
+        <div class="form-group"><label>Server Host *</label><input id="f-host-${id}" placeholder="play.example.com" value="${s.host || ''}"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Port</label><input id="f-port-${id}" type="number" placeholder="25565" value="${s.port || 25565}"></div>
+          <div class="form-group"><label>MC Version</label><input id="f-ver-${id}" placeholder="1.21" value="${s.version || '1.21'}"></div>
+        </div>
+        <div class="form-group"><label>Username *</label><input id="f-user-${id}" placeholder="AFKBot${id}" value="${s.username || ''}"></div>
+        <div class="form-group"><label>Password (AuthMe)</label><input id="f-pass-${id}" type="password" placeholder="Leave blank if not needed"></div>
+        <div class="form-actions">
+          <div class="btn-row">
+            <button class="btn btn-blue" onclick="registerSlot('${id}')">💾 Save & Register</button>
+            <button class="btn btn-grey" onclick="document.getElementById('register-form-${id}').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console -->
+    <div class="col-right">
+      <div class="card console-card">
+        <div class="card-title">▌ Slot ${id} Console <span style="float:right;font-weight:400;text-transform:none">${logs.length} messages</span></div>
+        <div class="console-output" id="console-${id}">
+          ${logs.length === 0
+            ? `<div class="console-empty">No messages yet. Start the bot to see live output.</div>`
+            : logs.map(l => logLineHTML(l)).join("")}
+        </div>
+        <div class="chat-input-row">
+          <span class="chat-prefix">›</span>
+          <input class="chat-input" id="chat-input-${id}" placeholder="${s.online ? 'Send message to Minecraft...' : 'Start the bot first...'}" ${!s.online ? 'disabled' : ''}
+            onkeydown="if(event.key==='Enter') sendChat('${id}')">
+          <button class="btn btn-blue" onclick="sendChat('${id}')" ${!s.online ? 'disabled' : ''}>SEND</button>
+        </div>
+      </div>
+    </div>
+  `;
+  scrollConsole(id);
+}
+
+function logLineHTML(l) {
+  const time = new Date(l.timestamp).toTimeString().slice(0, 8);
+  const sc = l.sender === "[System]" ? "system" : l.sender === "[Server]" ? "server" : l.sender === "[Error]" ? "error" : "player";
+  return `<div class="log-line"><span class="log-time">[${time}]</span><span class="log-sender ${sc}">${escHtml(l.sender)}</span><span class="log-msg">${escHtml(l.message)}</span></div>`;
+}
+
+function appendLog(l) {
+  const con = document.getElementById(`console-${activeSlot}`);
+  if (!con) return;
+  const empty = con.querySelector(".console-empty");
+  if (empty) empty.remove();
+  const div = document.createElement("div");
+  div.innerHTML = logLineHTML(l);
+  con.appendChild(div.firstChild);
+  scrollConsole(activeSlot);
+  // Update count
+  const title = con.previousElementSibling;
+  if (title) { const span = title.querySelector("span"); if (span) span.textContent = `${slotLogs[activeSlot]?.length || 0} messages`; }
+}
+
+function scrollConsole(id) {
+  const con = document.getElementById(`console-${id}`);
+  if (con) con.scrollTop = con.scrollHeight;
+}
+
+function updatePlayersPanel(id) {
+  const s = slotStatuses[id];
+  const el = document.getElementById(`embed-status-${id}`);
+  const pc = document.getElementById(`embed-players-${id}`);
+  const list = document.getElementById(`players-list-${id}`);
+  const card = document.getElementById(`players-card-${id}`);
+  if (el) el.textContent = s.online ? '🟢 Online' : s.reconnecting ? '🟡 Reconnecting' : '🔴 Offline';
+  if (pc) pc.textContent = s.online ? (s.playerCount ?? 0) : '—';
+  if (list) list.innerHTML = s.online && s.players?.length ? s.players.map(p => `<div class="player-entry">${escHtml(p)}</div>`).join("") : '<div style="color:var(--text-muted);font-size:12px">No players / Bot offline</div>';
+  if (card) { const t = card.querySelector(".card-title"); if (t) t.textContent = `Players Online (${s.online ? (s.playerCount ?? 0) : 0})`; }
+  // Update chat input
+  const ci = document.getElementById(`chat-input-${id}`);
+  const sb = ci?.nextElementSibling;
+  if (ci) { ci.disabled = !s.online; ci.placeholder = s.online ? "Send message to Minecraft..." : "Start the bot first..."; }
+  if (sb) sb.disabled = !s.online;
+  // Update buttons
+  updateTopbar(id);
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+function openRegisterForm(id) {
+  const form = document.getElementById(`register-form-${id}`);
+  if (form) form.style.display = form.style.display === "none" ? "" : "none";
+  // Load current settings
+  fetch(`/api/slot/${id}/settings`).then(r => r.json()).then(data => {
+    if (data.host) { setVal(`f-host-${id}`, data.host); setVal(`f-port-${id}`, data.port); setVal(`f-ver-${id}`, data.version); setVal(`f-user-${id}`, data.username); }
+  }).catch(() => {});
+}
+
+async function registerSlot(id) {
+  const host = getVal(`f-host-${id}`);
+  const port = getVal(`f-port-${id}`) || "25565";
+  const version = getVal(`f-ver-${id}`) || "1.21";
+  const username = getVal(`f-user-${id}`);
+  const password = getVal(`f-pass-${id}`) || null;
+  if (!host || !username) { showToast("Host and Username are required!", true); return; }
+  try {
+    await apiFetch(`/api/slot/${id}/register`, "POST", { host, port: Number(port), version, username, password });
+    slotStatuses[id] = { ...slotStatuses[id], host, username, registered: true };
+    document.getElementById(`register-form-${id}`).style.display = "none";
+    updateSidebarSlot(id); updateStats(); renderContent(id);
+    showToast(`Slot ${id} registered!`);
+  } catch (e) { showToast(e.message || "Failed", true); }
+}
+
+async function startBot(id) {
+  try {
+    await apiFetch(`/api/slot/${id}/start`, "POST");
+    showToast(`Slot ${id}: Bot starting...`);
+  } catch (e) { showToast(e.message || "Failed to start", true); }
+}
+
+async function stopBot(id) {
+  try {
+    await apiFetch(`/api/slot/${id}/stop`, "POST");
+    showToast(`Slot ${id}: Bot stopped.`);
+  } catch (e) { showToast(e.message || "Failed", true); }
+}
+
+async function restartBot(id) {
+  try {
+    await apiFetch(`/api/slot/${id}/restart`, "POST");
+    showToast(`Slot ${id}: Restarting...`);
+  } catch (e) { showToast(e.message || "Failed", true); }
+}
+
+async function sendChat(id) {
+  const input = document.getElementById(`chat-input-${id}`);
+  if (!input?.value.trim()) return;
+  try {
+    await apiFetch(`/api/slot/${id}/chat`, "POST", { message: input.value });
+    input.value = "";
+  } catch (e) { showToast(e.message || "Bot not online", true); }
+}
+
+async function refreshStatus(id) {
+  try {
+    const data = await apiFetch(`/api/slot/${id}/status`, "GET");
+    slotStatuses[id] = { ...slotStatuses[id], ...data };
+    updateSidebarSlot(id); updateTopbar(id); updatePlayersPanel(id);
+    showToast(`Slot ${id} status refreshed.`);
+  } catch {}
+}
+
+function openDeleteModal(id) {
+  deleteTarget = id;
+  const s = slotStatuses[id];
+  document.getElementById("delete-modal-sub").textContent = `You are about to delete Slot ${id}${s.username ? ` (${s.username})` : ""}.`;
+  document.getElementById("delete-modal").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("delete-modal").classList.remove("open");
+  deleteTarget = null;
+}
+
+async function confirmDelete() {
+  if (!deleteTarget) return;
+  const id = deleteTarget;
+  closeModal();
+  try {
+    await apiFetch(`/api/slot/${id}`, "DELETE");
+    showToast(`Slot ${id} deleted.`);
+  } catch (e) { showToast(e.message || "Failed", true); }
+}
+
+// ─── Utils ────────────────────────────────────────────────────────────────────
+async function apiFetch(url, method = "GET", body = null) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const res = await fetch(url, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function getVal(id) { const el = document.getElementById(id); return el ? el.value.trim() : ""; }
+function setVal(id, val) { const el = document.getElementById(id); if (el && val != null) el.value = val; }
+function escHtml(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+let toastTimer = null;
+function showToast(msg, isError = false) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast" + (isError ? " error" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.classList.add("hide"); }, 3000);
+}
+
+// ─── Load initial data ────────────────────────────────────────────────────────
+async function loadInitial() {
+  try {
+    const data = await apiFetch("/api/slots", "GET");
+    for (const [id, info] of Object.entries(data)) {
+      slotStatuses[id] = { ...slotStatuses[id], ...info };
+    }
+  } catch {}
+  buildSidebar();
+  for (let i = 1; i <= MAX_SLOTS; i++) updateSidebarSlot(String(i));
+  updateStats();
+}
+
+loadInitial();
+</script>
+
+  <body>
+
+<video id="anime-bg" autoplay loop >
+    <source src="./bgvideo.mp4" type="video/mp4">
+</video>
+
+<div class="layout">
+
+    <!-- Tumhara pura dashboard -->
+
+</div>
+<link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+    <video id="bgvideo.mp4" autoplay loop >
+    <source src="bgvideo.mp4" type="video/mp4">
+</video>
+</body>
+</html>
+<video id="bg-video" autoplay loop>
+    <source src="bgvideo.mp4" type="video/mp4">
+</video>
+
+<div class="overlay"></div>
+
+<div class="volume-box">
+    <button id="mute-btn">🔊</button>
+
+    <input
+        type="range"
+        id="volumeSlider"
+        min="0"
+        max="100"
+        value="50"
+    >
+</div>

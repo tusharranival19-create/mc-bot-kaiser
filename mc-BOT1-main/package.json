@@ -1,0 +1,20 @@
+{
+  "name": "mc-afk-bot-newversion",
+  "version": "1.0.0",
+  "description": "100-slot Minecraft AFK Bot Manager",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "express": "^4.19.2",
+    "mineflayer": "^4.23.0",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
