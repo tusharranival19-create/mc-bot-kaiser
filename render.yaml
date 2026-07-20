@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: mc-bot-kaiser
+    runtime: node
+    rootDir: mc-BOT1-main
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        generateValue: false
